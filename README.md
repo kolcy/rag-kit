@@ -59,8 +59,7 @@ IDEA 里二选一：
 > Spring Boot 不会自动加载 `application-{profile}.properties`，必须显式激活对应 profile。
 > 忘了这一步的典型症状就是：密码明明改了，却仍然报 `Access denied`。
 
-服务端口默认 **8085**（`8080` 在不少 Windows 机器上会被 Steam 的 `steamwebhelper.exe` 占掉，
-症状是 `Web server failed to start. Port 8080 was already in use`）。换端口改 `server.port` 即可。
+服务端口默认 **8085**。换端口改 `server.port` 即可。
 
 **5. 打开浏览器测试台（最省事）**
 
