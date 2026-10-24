@@ -1,0 +1,140 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "rag-kit",
+    "description": "本地检索增强问答（RAG）模块。全链路不出本机：文档切块 -> bge-m3 向量化 -> 余弦相似度 Top-K -> 双提示词编排 -> qwen2.5 作答。\n\n**调用顺序**：必须先调 /api/ingest 灌入文档，再调 /api/ask，否则永远不会命中。\n\n**耗时提醒**：首次请求会触发 Ollama 加载模型（qwen2.5:7b / bge-m3），可能几十秒到数分钟，请把 Apifox 的请求超时调到 300 秒以上，否则会误判为接口挂了。",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8085",
+      "description": "本地开发（端口在 application.properties 的 server.port）"
+    }
+  ],
+  "paths": {
+    "/api/ingest": {
+      "post": {
+        "tags": ["RAG"],
+        "summary": "灌入一篇文档",
+        "description": "规范化 -> 切块 -> 批量向量化 -> 事务化入库。返回实际入库的片段数。同一 documentId 重复灌入会覆盖。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["documentId", "title", "text"],
+                "properties": {
+                  "documentId": {
+                    "type": "string",
+                    "description": "文档唯一标识，自己起，如 doc-001",
+                    "example": "doc-demo-001"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "文档标题，会随片段一起入库，检索命中时可用于溯源",
+                    "example": "国家奖学金评审办法（测试）"
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "正文全文。会被按段落切块，太短可能只切出 1 段，建议至少几百字",
+                    "example": "国家奖学金的奖励标准为每生每年8000元。评审时间为每年9月，由各学院组织学生申请。申请条件：在校期间学习成绩优异，社会实践、创新能力、综合素质等方面特别突出。同一学年内，获得国家奖学金的家庭经济困难学生可以同时申请并获得国家助学金，但不能同时获得国家励志奖学金。"
+                  }
+                }
+              },
+              "example": {
+                "documentId": "doc-demo-001",
+                "title": "国家奖学金评审办法（测试）",
+                "text": "国家奖学金的奖励标准为每生每年8000元。评审时间为每年9月，由各学院组织学生申请。申请条件：在校期间学习成绩优异，社会实践、创新能力、综合素质等方面特别突出。同一学年内，获得国家奖学金的家庭经济困难学生可以同时申请并获得国家助学金，但不能同时获得国家励志奖学金。"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "入库成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "chunks": {
+                      "type": "integer",
+                      "description": "实际入库的片段数",
+                      "example": 1
+                    }
+                  }
+                },
+                "example": {
+                  "chunks": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ask": {
+      "post": {
+        "tags": ["RAG"],
+        "summary": "提问",
+        "description": "检索 Top-K 后按阈值 0.55 判断是否命中。命中走「依据资料作答」提示词，未命中走「正常闲聊」提示词 —— 两种情况都会调用模型，区别只在提示词。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["question"],
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "description": "用户问题",
+                    "example": "国家奖学金多少钱？"
+                  }
+                }
+              },
+              "example": {
+                "question": "国家奖学金多少钱？"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "回答成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer": {
+                      "type": "string",
+                      "description": "模型回答",
+                      "example": "根据国家奖学金评审办法，奖励标准为每生每年8000元。\n\n我的建议：符合条件的话记得每年9月关注学院的申请通知。"
+                    },
+                    "hit": {
+                      "type": "boolean",
+                      "description": "true=命中知识库（走答题提示词）；false=未命中（走闲聊提示词）",
+                      "example": true
+                    },
+                    "degraded": {
+                      "type": "boolean",
+                      "description": "true=模型调用失败，走了降级文案；false=正常调用模型成功",
+                      "example": false
+                    }
+                  }
+                },
+                "example": {
+                  "answer": "根据国家奖学金评审办法，奖励标准为每生每年8000元。\n\n我的建议：符合条件的话记得每年9月关注学院的申请通知。",
+                  "hit": true,
+                  "degraded": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

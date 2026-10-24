@@ -90,6 +90,23 @@ curl -X POST http://localhost:8085/api/ask \
 > 服务端报 `JSON parse error: Invalid UTF-8 start byte 0xb9`。
 > 把 JSON 存成 UTF-8 文件，用 `--data-binary @file` 提交即可。
 
+**6. 用 Apifox / Postman 测（推荐）**
+
+仓库根目录带了 `apifox-openapi.json`（OpenAPI 3.0.3），Apifox 里
+**项目设置 → 导入数据 → OpenAPI/Swagger → 上传文件**，两个接口连同请求示例、字段说明、响应示例一起进来，
+不用手敲。
+
+三个容易卡住的点：
+
+| 坑 | 现象 | 怎么办 |
+|---|---|---|
+| 没灌库就提问 | `hit` 永远是 `false`，以为检索坏了 | 顺序固定：先 `/api/ingest`，再 `/api/ask` |
+| 请求超时 | 报网络错误 / 超时，但服务端日志正常 | 把 Apifox 请求超时调到 **300 秒**以上 |
+| 第一次特别慢 | 首调卡一两分钟 | Ollama 在加载模型到内存，属正常；热了之后单次约 10 秒 |
+
+结果看两个布尔字段就够了：`hit` 判断是否命中知识库，`degraded` 判断是否模型挂了走了降级
+（`true` 说明没真的调到模型，这条不算测试通过）。
+
 ---
 
 ## 链路与分层
