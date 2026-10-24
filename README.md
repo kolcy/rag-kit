@@ -62,7 +62,15 @@ IDEA 里二选一：
 服务端口默认 **8085**（`8080` 在不少 Windows 机器上会被 Steam 的 `steamwebhelper.exe` 占掉，
 症状是 `Web server failed to start. Port 8080 was already in use`）。换端口改 `server.port` 即可。
 
-**5. 灌一篇文档，然后问它**
+**5. 打开浏览器测试台（最省事）**
+
+服务起来后直接访问 **<http://localhost:8085/>** —— 仓库自带一个静态页面
+（`src/main/resources/static/index.html`，由 Spring Boot 同源托管，不用配 CORS）。
+页面上能灌文档、提问，直接看 `hit` / `degraded` 徽章和每次耗时，还有一张测试记录表方便对比命中与不命中。
+
+> 必须通过 `http://localhost:8085/` 访问。直接双击 HTML 用 `file://` 打开会因为跨域失败。
+
+想用命令行也可以：
 
 ```bash
 curl -X POST http://localhost:8085/api/ingest \
