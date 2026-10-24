@@ -1,20 +1,25 @@
-# rag-kit · 可独立运行的检索增强问答模块
+# rag-kit
 
-一套**不依赖云端 API** 的 RAG（检索增强生成）最小实现：文档切块 → 本地向量化 → 余弦相似度 Top-K 检索 → 双提示词编排 → 本地大模型作答。全部在本地跑完，数据不出机器。
+不依赖云端 API 的检索增强问答（RAG）最小实现：文档切块 → 本地向量化 → 余弦相似度 Top-K 检索 → 双提示词编排 → 本地大模型作答。全链路在本机完成，数据不出机器。
 
 ```
-Spring Boot 3.5 · Java 17 · MySQL 8 · 本地 Ollama（bge-m3 向量 / qwen2.5:7b 对话）
+Spring Boot 3.5 · Java 17 · MySQL 8 · Ollama（bge-m3 向量 / qwen2.5:7b 对话）
 ```
 
----
+## 效果
 
-## 为什么单独抽出来
+服务内置一个浏览器测试台（`src/main/resources/static/index.html`，由 Spring Boot 同源托管）。启动后访问 **<http://localhost:8085/>** 即可灌入文档、发起提问，并直接观察命中状态、是否降级与本次耗时，页面下方保留一张测试记录表用于对比命中与未命中的差异。
 
-这套代码原本是一个校园项目（8 人共有软著）里的问答模块。**整体项目的处置权不属于我一个人**，但检索问答这条线是我独立开发、且可以脱离原项目单独运行的部分，所以我按《计算机软件保护条例》第十条「可分割使用的部分，开发者单独享有著作权」，抽出来单独发布。
+一次真实调用（问题命中知识库）：
 
-原项目特有的东西（登录鉴权、会话表、小程序接口）全部没有带过来 —— 这个仓库里只有检索与问答本身。原项目整体并未包含在本仓库中。
+```http
+POST /api/ask
+{"question":"国家奖学金多少钱？"}
 
----
+{"hit":true,"degraded":false,"answer":"国家奖学金的奖励标准为每生每年8000元。……"}
+```
+
+命中与未命中都会调用模型，两者输出的差异来自两套 system prompt，见「设计决策 2」。
 
 ## 快速开始
 
@@ -23,7 +28,7 @@ Spring Boot 3.5 · Java 17 · MySQL 8 · 本地 Ollama（bge-m3 向量 / qwen2.5
 ```bash
 ollama pull bge-m3        # 向量模型，1024 维
 ollama pull qwen2.5:7b    # 对话模型
-ollama serve              # 默认 11434
+ollama serve              # 默认监听 11434
 ```
 
 **2. 建库**
@@ -32,166 +37,96 @@ ollama serve              # 默认 11434
 CREATE DATABASE ragkit DEFAULT CHARACTER SET utf8mb4;
 ```
 
-表结构不用手动建，`spring.jpa.hibernate.ddl-auto=update` 会自动生成 `knowledge_chunk`。
+表结构无需手动创建，`spring.jpa.hibernate.ddl-auto=update` 会自动生成 `knowledge_chunk`。
 
-**3. 填本机密码**（这个文件被 git 忽略了，密码不会进仓库）
+**3. 配置本机密码**
 
-`application.properties` 里的 `spring.datasource.password` 是占位符 `CHANGE_ME`。
-**直接启动一定失败**，会报 `Access denied for user 'root'@'localhost' (using password: YES)`。
-
-另建 `src/main/resources/application-local.properties`，**只需要写这一行**：
+`application.properties` 中的 `spring.datasource.password` 是占位符 `CHANGE_ME`。另建 `src/main/resources/application-local.properties`（已被 `.gitignore` 忽略），写入：
 
 ```properties
 spring.datasource.password=你本机的 MySQL root 密码
 ```
 
-**4. 跑起来（必须激活 local profile，否则上一步那个文件不会被加载）**
+**4. 启动**
 
 ```bash
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-IDEA 里二选一：
+IDEA 中在 Run/Debug Configurations 的 **Active profiles** 填入 `local`。服务默认监听 **8085**。
 
-- Run/Debug Configurations → **Active profiles** 填 `local`
-- 或者 VM options 加 `-Dspring.profiles.active=local`
+随后访问 <http://localhost:8085/> 打开测试台。若需要用 Apifox 或 Postman 调试，导入仓库根目录的 `apifox-openapi.json`（OpenAPI 3.0.3）即可获得两个接口及其请求示例。
 
-> Spring Boot 不会自动加载 `application-{profile}.properties`，必须显式激活对应 profile。
-> 忘了这一步的典型症状就是：密码明明改了，却仍然报 `Access denied`。
+<details>
+<summary>启动与调用中的常见问题</summary>
 
-服务端口默认 **8085**（`8080` 在不少 Windows 机器上会被 Steam 的 `steamwebhelper.exe` 占掉，
-症状是 `Web server failed to start. Port 8080 was already in use`）。换端口改 `server.port` 即可。
-
-**5. 打开浏览器测试台（最省事）**
-
-服务起来后直接访问 **<http://localhost:8085/>** —— 仓库自带一个静态页面
-（`src/main/resources/static/index.html`，由 Spring Boot 同源托管，不用配 CORS）。
-页面上能灌文档、提问，直接看 `hit` / `degraded` 徽章和每次耗时，还有一张测试记录表方便对比命中与不命中。
-
-> 必须通过 `http://localhost:8085/` 访问。直接双击 HTML 用 `file://` 打开会因为跨域失败。
-
-想用命令行也可以：
-
-```bash
-curl -X POST http://localhost:8085/api/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"documentId":"doc-001","title":"国家奖学金评审办法","text":"国家奖学金每生每年8000元，评审时间为每年9月……"}'
-
-curl -X POST http://localhost:8085/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question":"国家奖学金多少钱？"}'
-```
-
-返回 `hit: true` 表示命中了知识库，`hit: false` 表示走了闲聊分支。
-
-实测结果（本地 qwen2.5:7b）：
-
-```json
-{"chunks":1}
-{"hit":true,"degraded":false,"answer":"国家奖学金的奖励标准为每生每年8000元。\n\n我的建议：……"}
-{"hit":false,"degraded":false,"answer":"你好！最近咋样？学习生活还顺利吗？……"}
-```
-
-同一个问题命中与不命中**都调了模型**，输出的差别完全来自两套 prompt —— 这正是"双提示词"设计要的效果。
-
-> **Windows 上 curl 的坑**：Git Bash 里直接 `-d '{"question":"中文"}'`，中文会被按 GBK 编码发出去，
-> 服务端报 `JSON parse error: Invalid UTF-8 start byte 0xb9`。
-> 把 JSON 存成 UTF-8 文件，用 `--data-binary @file` 提交即可。
-
-**6. 用 Apifox / Postman 测（推荐）**
-
-仓库根目录带了 `apifox-openapi.json`（OpenAPI 3.0.3），Apifox 里
-**项目设置 → 导入数据 → OpenAPI/Swagger → 上传文件**，两个接口连同请求示例、字段说明、响应示例一起进来，
-不用手敲。
-
-三个容易卡住的点：
-
-| 坑 | 现象 | 怎么办 |
+| 现象 | 原因 | 处理 |
 |---|---|---|
-| 没灌库就提问 | `hit` 永远是 `false`，以为检索坏了 | 顺序固定：先 `/api/ingest`，再 `/api/ask` |
-| 请求超时 | 报网络错误 / 超时，但服务端日志正常 | 把 Apifox 请求超时调到 **300 秒**以上 |
-| 第一次特别慢 | 首调卡一两分钟 | Ollama 在加载模型到内存，属正常；热了之后单次约 10 秒 |
+| `Access denied for user 'root'@'localhost'` | `application-local.properties` 未加载 | 必须显式激活 `local` profile。Spring Boot 不会自动加载 `application-{profile}.properties`，配置改了却未生效是最常见的排查点 |
+| `Port 8080 was already in use` | Windows 上 8080 常被 `steamwebhelper.exe` 占用 | 修改 `server.port`，本仓库默认为 8085 |
+| 首次 `/api/ask` 卡一两分钟 | Ollama 正在把模型加载进内存 | 属正常现象，预热后单次约 10 秒；调试时建议把客户端超时调到 300 秒以上 |
+| `JSON parse error: Invalid UTF-8 start byte` | Git Bash 下 curl 把中文按 GBK 编码发出 | 将 JSON 存为 UTF-8 文件，用 `--data-binary @file` 提交 |
+| 测试台空白 / 请求失败 | 通过 `file://` 直接打开了 HTML | 必须经 `http://localhost:8085/` 访问 |
+| `hit` 始终为 `false` | 尚未灌入知识库 | 调用顺序固定：先 `POST /api/ingest`，再 `POST /api/ask` |
 
-结果看两个布尔字段就够了：`hit` 判断是否命中知识库，`degraded` 判断是否模型挂了走了降级
-（`true` 说明没真的调到模型，这条不算测试通过）。
+响应中两个布尔字段的判定含义：`hit` 表示是否命中知识库，`degraded` 为 `true` 表示模型未调通、返回的是降级话术，此种情况不计入有效测试。
 
----
+</details>
 
 ## 链路与分层
 
 | 层 | 类 | 职责 |
 |---|---|---|
-| 工具 | `TextNormalizer` / `TextSplitter` / `CosineSimilarity` / `VectorJson` | 纯函数，无状态，拿来就能单测 |
-| 向量 | `EmbeddingClient` | 调 `/api/embed`，批量文本 → 向量列表 |
-| 入库 | `KnowledgeIngestService` + `KnowledgeChunkStore` | 规范化 → 切块 → 批量向量化 → **事务化**整篇替换 |
-| 检索 | `KnowledgeRetrieveService` | 问题向量化 → 全表算余弦 → 降序 → 截 Top-K。**不做阈值过滤** |
-| 模型 | `OllamaChatClient` | 只管跟 `/api/chat` 打交道 |
-| 编排 | `RagQaService` | 检索 → 阈值 → 选提示词 → 调模型 → 降级 |
+| 工具 | `TextNormalizer` / `TextSplitter` / `CosineSimilarity` / `VectorJson` | 纯函数，无状态，可直接单测 |
+| 向量 | `EmbeddingClient` | 调用 `/api/embed`，批量文本转向量列表 |
+| 入库 | `KnowledgeIngestService` + `KnowledgeChunkStore` | 规范化 → 切块 → 批量向量化 → 事务化整篇替换 |
+| 检索 | `KnowledgeRetrieveService` | 问题向量化 → 全表计算余弦 → 降序 → 截取 Top-K，不做阈值过滤 |
+| 模型 | `OllamaChatClient` | 封装与 `/api/chat` 的交互 |
+| 编排 | `RagQaService` | 检索 → 阈值判断 → 选择提示词 → 调用模型 → 异常降级 |
 | 入口 | `RagController` | `POST /api/ask`、`POST /api/ingest` |
 
-每个类只干一件事，所以每个类都能单测 —— 这也是全链路用构造器注入而不是 `@Autowired` 字段注入的原因。
+各层职责单一，因此均可独立单测。这也是全链路采用构造器注入而非 `@Autowired` 字段注入的原因。
 
----
+## 设计决策
 
-## 几个刻意的设计决策
+### 1. 检索层不执行阈值过滤
 
-### 1. 检索层不做阈值过滤
+`KnowledgeRetrieveService` 只负责按相似度排序并返回 Top-K，不判断是否足够相关；阈值判定上移至编排层 `RagQaService`。
 
-`KnowledgeRetrieveService` 只负责"按相似度排序返回 Top-K"，**不回答"够不够格"**。
-阈值判断放在编排层 `RagQaService`。
+阈值属于随业务调整的策略，检索属于通用能力。分离后，推荐、去重、聚类等场景可直接复用检索服务，无需为调整阈值修改检索层。
 
-理由：阈值是会随业务调的策略，检索是通用能力。分开之后，推荐、去重、聚类这些场景可以直接复用检索服务，不用为了改阈值去动它。
+### 2. 命中与未命中均调用模型
 
-### 2. 未命中也要调模型（这条是被实际使用打脸后改的）
+初版设计为「检索未命中时返回固定话术、不调用模型」，动机是省下一次最长 60 秒的远程调用。投入使用后该设计暴露出问题：用户问候语同样走未命中分支，收到的却是「官方资料中暂时无法找到答案」。
 
-初版设计成"检索没命中就返回固定话术、不调模型"，理由是省一次最长 60 秒的远程调用。
+根因在于把「知识库中未检索到」与「该问题不应回答」等同起来。检索结果为空仅说明知识库覆盖不足，并不意味着模型不能正常回应用户。
 
-实际用下来翻车了：用户说「你好」也走这条路，被回一句"官方资料中暂时无法找到答案"。
+当前实现为两条分支都调用模型，差异仅在 system prompt 的选择：
 
-**根因是把"库里没检索到"和"这个问题不该回答"划了等号。** 检索为空只说明知识库里没有，不代表模型不能正常陪用户聊天。
+- 命中时使用 `ANSWER_SYSTEM_PROMPT`：严格依据资料作答，数字不得编造；答复后另起一段给出建议，并声明建议不属于官方规定
+- 未命中时使用 `CHAT_SYSTEM_PROMPT`：保持人设正常对话；一旦涉及具体政策（金额、条件、时间、流程），坦诚说明未检索到
 
-现在改成：命中与未命中**都调模型**，区别只在于用哪套 system prompt ——
+代价是每次请求多出数秒延迟；相较之下，误伤正常对话对体验的影响更大，因此接受该代价。
 
-- 命中用 `ANSWER_SYSTEM_PROMPT`：严格照资料说，数字一个字不许编；答完另起一段给建议，并注明"以下是我的建议，不是官方规定"
-- 未命中用 `CHAT_SYSTEM_PROMPT`：保留人设正常聊天；一旦涉及具体政策（金额、条件、时间、流程）就坦诚说没查到
+提示词中有两条约束需要显式声明：禁止出现「根据提供的文件」「资料片段」一类表述，禁止引用片段编号。若不明确写出，模型会将 `buildUserPrompt` 中的 `【片段2】` 原样复述给用户。
 
-代价是每次多几秒延迟。这个代价值得。
+### 3. 阈值 0.55 的取值依据
 
-顺带两条 prompt 写法上的血泪经验：必须**显式**写"不要出现'根据提供的文件''资料片段'这类说法"、必须**显式**写"不要引用片段编号" —— 不写，模型就会把 `buildUserPrompt` 里的 `【片段2】` 原样念出来。
+相关问题（如「国家奖学金多少钱」对应奖学金文件）相似度为 0.63~0.75；不相关问题（如「图书馆几点关门」对应奖学金文件）为 0.40~0.45。取两组区间之间并偏向保守，定为 0.55。
 
-### 3. 阈值 0.55 是实测出来的，不是拍脑袋
+### 4. 编排方法不加 `@Transactional`
 
-相关问题（"国家奖学金多少钱" 对上奖学金文件）相似度 0.63~0.75；
-不相关问题（"图书馆几点关门" 对上奖学金文件）0.40~0.45。
-取两组之间、偏保守一点，定 0.55。
+编排流程中包含一次最长 60 秒的远程模型调用。若将其纳入事务，数据库连接会在整个远程调用期间被占用，并发上升时连接池将迅速耗尽。因此每次落库各自作为短事务执行。
 
-### 4. 编排方法刻意不加 `@Transactional`
+代价是不保证跨步骤的原子性，此处予以接受。
 
-方法里有一次最长 60 秒的远程调用。包在事务里，数据库连接会在整个远程调用期间被占住，并发一上来连接池就垮。所以让每次落库各自成为短事务。
+### 5. 两类异常共用一套降级话术
 
-代价是不保证原子性，这个我接受。
+模型调用失败（`RestClientException`）与检索阶段数据异常（余弦计算抛出异常）返回同一句可读提示，不向调用方暴露堆栈。调用方只需获知服务异常；具体是模型不可用还是库内数据损坏，通过 `error` 级别日志区分。
 
-### 5. 降级：两类异常共用一套话术
+### 6. 模型厂商切换隔离在配置层
 
-模型挂了（`RestClientException`）和检索时数据脏了（余弦计算抛异常）都返回同一句可读提示，不把堆栈抛给调用方。
-用户只需要知道"服务出问题了"；具体是模型挂了还是库里数据坏了，靠 `error` 日志区分。
-
-### 6. 换模型厂商只动配置层
-
-`OllamaClientConfig` + `OllamaProperties` 是唯一知道"对面是谁"的地方，Service 只认识注入进来的 `RestClient`。
-要把 Ollama 换成云端 API，改这两个类即可。
-
----
-
-## 已知不足（按该做的优先级排）
-
-1. **阈值硬编码** → 应外移到配置，再建一个小评测集（几十条问题 + 人工标注）反推最优值
-2. **单轮，没有上下文** → 把历史问答拼进 messages 数组即可支持追问
-3. **全量线性扫描** → 目前几百条块完全够用；上千条之后路线是：本地缓存 → ANN 索引（HNSW）→ 十万级再上 pgvector / Milvus
-4. **没有流式输出** → 现在要等几秒整段返回，下一步改 SSE 逐字显示
-5. **切分是定长窗口** → 会在句子中间断开；更好的做法是优先按段落/句号切，定长只作兜底
-
----
+`OllamaClientConfig` 与 `OllamaProperties` 是唯一感知下游服务类型的地方，Service 层仅依赖注入的 `RestClient`。若需将 Ollama 替换为云端 API，修改这两个类即可。
 
 ## 测试
 
@@ -199,39 +134,33 @@ curl -X POST http://localhost:8085/api/ask \
 mvn test
 ```
 
-37 个用例，**不需要 MySQL、不需要 Ollama**，`mvn test` 一次全绿：
+37 个用例，不依赖 MySQL 与 Ollama：
 
-| 类 | 条数 | 说明 |
+| 类 | 条数 | 覆盖内容 |
 |---|---|---|
 | `CosineSimilarityTest` | 8 | 同向 / 正交 / 反向 / 零向量 / 维度不一致 / null / 空 等边界 |
-| `TextNormalizerTest` | 6 | 全半角、空白折叠、大小写等 |
+| `TextNormalizerTest` | 6 | 全半角转换、空白折叠、大小写归一 |
 | `TextSplitterTest` | 3 | 空串、2000 字中文的切分长度与首尾对齐、非法参数 |
 | `KnowledgeIngestServiceTest` | 5 | Mockito 捕获入库实体，断言字段与条数 |
-| `KnowledgeRetrieveServiceTest` | 5 | 断言排序、Top-K 截断、不做阈值过滤 |
-| `OllamaChatClientTest` | 2 | `MockRestServiceServer` 钉死 `stream:false` 和取值路径 |
+| `KnowledgeRetrieveServiceTest` | 5 | 排序、Top-K 截断、不执行阈值过滤 |
+| `OllamaChatClientTest` | 2 | `MockRestServiceServer` 固定 `stream:false` 与取值路径 |
 | `KnowledgeChunkRepositoryTest` | 3 | `@DataJpaTest` + 嵌入式数据库 |
-| `RagQaServiceTest` | 5 | 命中/未命中的**提示词**断言、阈值边界、降级、参数校验 |
+| `RagQaServiceTest` | 5 | 命中与未命中的提示词断言、阈值边界、降级、参数校验 |
 
-> 抽出来的是原项目 47 条用例中的 32 条，加上本仓库新增的 `RagQaServiceTest` 5 条，共 37 条。
-> 剩下 15 条没带过来：8 条要连真实 MySQL 与本地模型（真实政策文档灌库、检索分数分布实测、
-> 端到端问答冒烟），7 条绑定原项目的会话表（`AiServiceTest` 依赖 `ChatSession` / `ChatRecord`）。
-> 抽出来时同步修掉了原项目里那条抄错期望值的用例（详见下一节）。
+其中两点值得说明：
 
-### 一条测试上的经验（一）：期望值能算出来就别手写
+期望值可推导时不应手写常量。`1 / Math.sqrt(2)` 优于 `0.7071`，手抄浮点常量易漏位，由此导致的测试失败会误导排查方向，看似余弦计算有误，实为常量抄写错误。
 
-期望值能算出来就别手写。`1 / Math.sqrt(2)` 比 `0.7071` 好 —— 手抄浮点数迟早会漏一位，
-而漏的那位会让测试变红，看起来像"余弦算错了"，实际是常量抄错了。
+当两条分支都会触发同一调用时，断言目标应从「是否调用」转移到「传入了什么」。`RagQaService` 的命中与未命中均调用模型，`verify(chatClient, never())` 对两条分支返回相同结果，已失去区分能力；改用 `ArgumentCaptor` 捕获 system prompt 后做 `assertEquals` 才能验证分支选择。
 
-### 一条测试上的经验（二）：两条分支都调模型时，要断言"传了什么"
+## 已知边界
 
-`RagQaService` 的命中与未命中**都调模型**，所以 `verify(chatClient, never())` 已经彻底失效 —— 它对两条分支给出同样的结果。
-
-**两条分支的行为靠参数区分时，断言目标要从"是否调用"转移到"传了什么"**，用 `ArgumentCaptor` 捕获 system prompt 做 `assertEquals`。
-
----
+1. **阈值硬编码** —— 应外移到配置项，并构建小规模评测集（数十条问题 + 人工标注）反推最优值
+2. **单轮问答，无上下文** —— 将历史问答按时间升序拼入 messages 数组即可支持追问
+3. **全量线性扫描** —— 数百条知识块下性能充足；上千条后的演进路线为：本地缓存 → ANN 索引（HNSW）→ 十万级引入 pgvector 或 Milvus
+4. **无流式输出** —— 当前需等待整段生成完毕。在交互场景中用户对首字延迟敏感，此时应改为 SSE 逐字返回
+5. **定长窗口切分** —— 可能在句中截断。更优做法是优先按段落与句末标点切分，定长仅作为兜底
 
 ## 许可
 
 MIT。见 [LICENSE](./LICENSE)。
-
-原校园项目的软著（登记号 2025SR2541132）为 8 人共同著作权，本仓库只包含其中可分割使用的检索问答部分。
