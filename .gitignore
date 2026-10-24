@@ -34,3 +34,7 @@ build/
 
 ### 本机私密配置：真实的数据库密码等放这里，不进仓库 ###
 src/main/resources/application-local.properties
+
+### 本地导出的接口/调试文件（Apifox 等），不进仓库 ###
+apifox-openapi.json
+*.apifox.*
