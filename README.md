@@ -34,32 +34,61 @@ CREATE DATABASE ragkit DEFAULT CHARACTER SET utf8mb4;
 
 表结构不用手动建，`spring.jpa.hibernate.ddl-auto=update` 会自动生成 `knowledge_chunk`。
 
-**3. 填本机配置**（这个文件被 git 忽略了，密码不会进仓库）
+**3. 填本机密码**（这个文件被 git 忽略了，密码不会进仓库）
 
-```bash
-cp src/main/resources/application.properties src/main/resources/application-local.properties
-# 改掉里面的 datasource.password
+`application.properties` 里的 `spring.datasource.password` 是占位符 `CHANGE_ME`。
+**直接启动一定失败**，会报 `Access denied for user 'root'@'localhost' (using password: YES)`。
+
+另建 `src/main/resources/application-local.properties`，**只需要写这一行**：
+
+```properties
+spring.datasource.password=你本机的 MySQL root 密码
 ```
 
-**4. 跑起来**
+**4. 跑起来（必须激活 local profile，否则上一步那个文件不会被加载）**
 
 ```bash
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
+
+IDEA 里二选一：
+
+- Run/Debug Configurations → **Active profiles** 填 `local`
+- 或者 VM options 加 `-Dspring.profiles.active=local`
+
+> Spring Boot 不会自动加载 `application-{profile}.properties`，必须显式激活对应 profile。
+> 忘了这一步的典型症状就是：密码明明改了，却仍然报 `Access denied`。
+
+服务端口默认 **8085**（`8080` 在不少 Windows 机器上会被 Steam 的 `steamwebhelper.exe` 占掉，
+症状是 `Web server failed to start. Port 8080 was already in use`）。换端口改 `server.port` 即可。
 
 **5. 灌一篇文档，然后问它**
 
 ```bash
-curl -X POST http://localhost:8080/api/ingest \
+curl -X POST http://localhost:8085/api/ingest \
   -H "Content-Type: application/json" \
   -d '{"documentId":"doc-001","title":"国家奖学金评审办法","text":"国家奖学金每生每年8000元，评审时间为每年9月……"}'
 
-curl -X POST http://localhost:8080/api/ask \
+curl -X POST http://localhost:8085/api/ask \
   -H "Content-Type: application/json" \
   -d '{"question":"国家奖学金多少钱？"}'
 ```
 
 返回 `hit: true` 表示命中了知识库，`hit: false` 表示走了闲聊分支。
+
+实测结果（本地 qwen2.5:7b）：
+
+```json
+{"chunks":1}
+{"hit":true,"degraded":false,"answer":"国家奖学金的奖励标准为每生每年8000元。\n\n我的建议：……"}
+{"hit":false,"degraded":false,"answer":"你好！最近咋样？学习生活还顺利吗？……"}
+```
+
+同一个问题命中与不命中**都调了模型**，输出的差别完全来自两套 prompt —— 这正是"双提示词"设计要的效果。
+
+> **Windows 上 curl 的坑**：Git Bash 里直接 `-d '{"question":"中文"}'`，中文会被按 GBK 编码发出去，
+> 服务端报 `JSON parse error: Invalid UTF-8 start byte 0xb9`。
+> 把 JSON 存成 UTF-8 文件，用 `--data-binary @file` 提交即可。
 
 ---
 

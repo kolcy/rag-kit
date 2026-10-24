@@ -24,7 +24,7 @@ public class RagController {
     /**
      * 提问。
      *
-     * <pre>curl -X POST http://localhost:8080/api/ask \
+     * <pre>curl -X POST http://localhost:8085/api/ask \
      *      -H "Content-Type: application/json" \
      *      -d '{"question":"国家奖学金多少钱？"}'</pre>
      */
@@ -41,7 +41,7 @@ public class RagController {
     /**
      * 灌入一篇文档：规范化 → 切块 → 批量向量化 → 事务化入库。
      *
-     * <pre>curl -X POST http://localhost:8080/api/ingest \
+     * <pre>curl -X POST http://localhost:8085/api/ingest \
      *      -H "Content-Type: application/json" \
      *      -d '{"documentId":"doc-001","title":"标题","text":"正文全文"}'</pre>
      *
