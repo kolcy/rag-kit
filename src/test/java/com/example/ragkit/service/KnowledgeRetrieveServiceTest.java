@@ -2,6 +2,7 @@ package com.example.ragkit.service;
 
 import com.example.ragkit.entity.KnowledgeChunk;
 import com.example.ragkit.repository.KnowledgeChunkRepository;
+import com.example.ragkit.utils.HashUtil;
 import com.example.ragkit.utils.VectorJson;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,8 +41,8 @@ class KnowledgeRetrieveServiceTest {
      */
     private KnowledgeChunk chunk(String content, List<Double> vector) {
         KnowledgeChunk c = new KnowledgeChunk();
-        c.setDocumentId("doc-test");
-        c.setDocumentTitle("测试文档");
+        c.setDocKey("doc-test");
+        c.setDocHash(HashUtil.sha256("测试文档"));
         c.setChunkIndex(0);
         c.setContent(content);
         c.setEmbedding(VectorJson.toJson(om, vector));   // 走真实序列化

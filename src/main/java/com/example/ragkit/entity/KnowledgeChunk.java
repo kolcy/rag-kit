@@ -15,11 +15,11 @@ public class KnowledgeChunk {
     @Column(name = "id")
     private Long id;
 
-    @Column(name = "document_id", length = 64, nullable = false)
-    private String documentId;
+    @Column(name = "doc_key", length = 255, nullable = false)
+    private String docKey;
 
-    @Column(name = "document_title", length = 255, nullable = false)
-    private String documentTitle;
+    @Column(name = "doc_hash", length = 255, nullable = false)
+    private String docHash;
 
     @Column(name = "chunk_index", nullable = false)
     private Integer chunkIndex;

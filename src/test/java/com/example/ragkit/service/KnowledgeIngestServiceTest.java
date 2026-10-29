@@ -1,6 +1,7 @@
 package com.example.ragkit.service;
 
 import com.example.ragkit.entity.KnowledgeChunk;
+import com.example.ragkit.utils.HashUtil;
 import com.example.ragkit.utils.TextNormalizer;
 import com.example.ragkit.utils.TextSplitter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,7 +37,7 @@ class KnowledgeIngestServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new KnowledgeIngestService(embeddingClient, store, new ObjectMapper());
+        service = new KnowledgeIngestService(embeddingClient, store, new ObjectMapper(),new DocumentLoader());
     }
 
     private static List<Double> fakeVector() {
@@ -56,31 +57,62 @@ class KnowledgeIngestServiceTest {
         });
 
         // when
-        int n = service.ingest("xshsc-001", "学生手册", text);
+        KnowledgeIngestService.IngestOutcome r = service.ingest("xshsc-001", text, false);
 
         // then
         verify(store).replaceChunks(eq("xshsc-001"), entitiesCaptor.capture());
         List<KnowledgeChunk> saved = entitiesCaptor.getValue();
 
         assertEquals(7, saved.size(), "2240 字 / 步长 350 应该是 7 段");
-        assertEquals(7, n);
+        assertEquals(7, r.chunks());
         for (int i = 0; i < saved.size(); i++) {
             assertEquals(i, saved.get(i).getChunkIndex());
-            assertEquals("xshsc-001", saved.get(i).getDocumentId());
-            assertEquals("学生手册", saved.get(i).getDocumentTitle());
+            assertEquals("xshsc-001", saved.get(i).getDocKey());
+            assertEquals(HashUtil.sha256(text), saved.get(i).getDocHash());
             assertNull(saved.get(i).getId(), "入库前绝不能有主键值");
         }
         assertTrue(text.startsWith(saved.get(0).getContent()), "第 0 段必须是原文开头");
     }
 
     @Test
-    @DisplayName("空文本：返回 0，且不调 embedding、不碰数据库")
+    @DisplayName("空文本：返回 0，且不调 embedding、不写库")
     void ingest_emptyText() {
-        int n = service.ingest("xshsc-001", "学生手册", "");
+        KnowledgeIngestService.IngestOutcome r = service.ingest("xshsc-001", "", false);
 
-        assertEquals(0, n);
+        assertEquals(0, r.chunks());
+        assertFalse(r.skipped(), "空文本不是「已存在所以跳过」，是切不出块");
         verifyNoInteractions(embeddingClient);
-        verifyNoInteractions(store);
+        verify(store, never()).replaceChunks(anyString(), anyList());
+    }
+
+    @Test
+    @DisplayName("内容已存在且未强制覆盖：直接跳过，不调 embedding、不写库")
+    void ingest_skipWhenHashExists() {
+        String text = "第一章 学生应当遵守学校规章制度并按时参加教育教学活动。".repeat(60);
+        when(store.existsByDocHash(HashUtil.sha256(text))).thenReturn(true);
+
+        KnowledgeIngestService.IngestOutcome r = service.ingest("xshsc-001", text, false);
+
+        assertTrue(r.skipped(), "哈希已存在时应返回 skipped");
+        assertEquals(0, r.chunks());
+        verifyNoInteractions(embeddingClient);
+        verify(store, never()).replaceChunks(anyString(), anyList());
+    }
+
+    @Test
+    @DisplayName("强制覆盖：先按内容哈希删掉旧名字的记录，再重新入库")
+    void ingest_forceDeletesByHashFirst() {
+        String text = "第一章 学生应当遵守学校规章制度并按时参加教育教学活动。".repeat(80);
+
+        when(embeddingClient.embed(anyList())).thenAnswer(inv -> {
+            List<String> texts = inv.getArgument(0);
+            return texts.stream().map(t -> fakeVector()).toList();
+        });
+
+        service.ingest("xshsc-001", text, true);
+
+        verify(store).deleteByDocHash(HashUtil.sha256(text));
+        verify(store).replaceChunks(eq("xshsc-001"), anyList());
     }
     @Test
     @DisplayName("向量数与片段数不一致：立刻抛异常，绝不能碰数据库")
@@ -91,7 +123,7 @@ class KnowledgeIngestServiceTest {
         when(embeddingClient.embed(anyList())).thenReturn(List.of(fakeVector()));
 
         assertThrows(IllegalStateException.class,
-                () -> service.ingest("xshsc-001", "学生手册", text));
+                () -> service.ingest("xshsc-001", text, false));
 
         verify(store, never()).replaceChunks(anyString(), anyList());
     }
@@ -106,7 +138,7 @@ class KnowledgeIngestServiceTest {
             return texts.stream().map(t -> fakeVector()).toList();
         });
 
-        service.ingest("xshsc-001", "学生手册", text);
+        service.ingest("xshsc-001", text, false);
 
         verify(store).replaceChunks(eq("xshsc-001"), entitiesCaptor.capture());
         List<KnowledgeChunk> saved = entitiesCaptor.getValue();
@@ -130,7 +162,7 @@ class KnowledgeIngestServiceTest {
             return texts.stream().map(t -> fakeVector()).toList();
         });
 
-        service.ingest("xshsc-001", "学生手册", text);
+        service.ingest("xshsc-001",  text, false);
 
         verify(store).replaceChunks(eq("xshsc-001"), entitiesCaptor.capture());
         List<KnowledgeChunk> saved = entitiesCaptor.getValue();

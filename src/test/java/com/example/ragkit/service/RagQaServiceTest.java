@@ -1,6 +1,7 @@
 package com.example.ragkit.service;
 
 import com.example.ragkit.entity.KnowledgeChunk;
+import com.example.ragkit.utils.HashUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,8 +53,8 @@ class RagQaServiceTest {
     private KnowledgeChunk chunk(String content) {
         KnowledgeChunk c = new KnowledgeChunk();
         c.setId(1L);
-        c.setDocumentId("doc-001");
-        c.setDocumentTitle("国家奖学金评审办法");
+        c.setDocKey("doc-001");
+        c.setDocHash(HashUtil.sha256("国家奖学金评审办法"));
         c.setChunkIndex(0);
         c.setContent(content);
         c.setEmbedding("[0.1,0.2,0.3]");

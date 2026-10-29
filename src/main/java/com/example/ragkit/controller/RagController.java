@@ -43,17 +43,15 @@ public class RagController {
      *
      * <pre>curl -X POST http://localhost:8085/api/ingest \
      *      -H "Content-Type: application/json" \
-     *      -d '{"documentId":"doc-001","title":"标题","text":"正文全文"}'</pre>
+     *      -d '{"docKey":"doc-001","text":"正文全文"}'</pre>
      *
      * @return 实际入库的片段数
      */
     @PostMapping("/ingest")
     public Map<String, Object> ingest(@RequestBody Map<String, String> body) {
-        int n = ingestService.ingest(
-                body.get("documentId"),
-                body.get("title"),
-                body.get("text")
-        );
-        return Map.of("chunks", n);
+        boolean force = "true".equals(body.get("force"));
+        KnowledgeIngestService.IngestOutcome r = ingestService.ingest(
+                body.get("docKey"), body.get("text"), force);
+        return Map.of("skipped", r.skipped(), "chunks", r.chunks());
     }
 }

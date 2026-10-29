@@ -50,6 +50,12 @@
   }
   button:hover:not(:disabled) { background: #12508f; }
   button:disabled { background: #9fb4cc; cursor: not-allowed; }
+  button.ghost {
+    margin-top: 0; background: #fff; color: var(--blue);
+    border: 1px solid var(--blue); padding: 7px 16px; font-size: 13px;
+  }
+  button.ghost:hover:not(:disabled) { background: var(--blue-bg); }
+  button.ghost:disabled { color: #9fb4cc; border-color: #9fb4cc; background: #fff; }
   .timer { margin-left: 12px; font-size: 13px; color: var(--muted); }
   .msg { margin-top: 14px; padding: 11px 13px; border-radius: 8px; font-size: 13px; display: none; }
   .msg.ok { background: var(--green-bg); color: var(--green); display: block; }
@@ -74,6 +80,57 @@
   td.q { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
   code { background: var(--gray-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  /* ---- 文件上传区 ---- */
+  .dropzone {
+    border: 2px dashed var(--line); border-radius: 12px;
+    padding: 26px 16px; text-align: center; background: #fbfbf9;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone.over { border-color: var(--blue); background: var(--blue-bg); }
+  .dz-main { font-size: 14px; }
+  .dz-sub { color: var(--muted); font-size: 12px; margin: 6px 0 10px; }
+  .dz-btns { display: flex; gap: 10px; justify-content: center; }
+  .dz-hint { color: var(--muted); font-size: 12px; margin-top: 12px; line-height: 1.5; }
+  .divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 22px 0 6px; color: var(--muted); font-size: 12px;
+  }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .prog { margin-top: 14px; font-size: 13px; color: var(--muted); display: none; }
+  .prog b { color: var(--text); font-weight: 500; }
+  .rt { margin-top: 8px; font-size: 12.5px; }
+  .rt td { padding: 6px 6px; }
+  .rt td.st { white-space: nowrap; }
+  .rt tr.ok td.st { color: var(--green); }
+  .rt tr.skip td.st { color: var(--muted); }
+  .rt tr.bad td.st { color: var(--red); }
+
+  /* 结果列表标题 + 清空按钮 */
+  .rt-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 16px; font-size: 12.5px; color: var(--muted);
+  }
+  button.x {
+    width: 24px; height: 24px; padding: 0; margin: 0; flex: none;
+    border: none; border-radius: 50%; background: transparent;
+    color: var(--muted); font-size: 17px; line-height: 24px; cursor: pointer;
+  }
+  button.x:hover:not(:disabled) { background: var(--gray-bg); color: var(--text); }
+  button.x:disabled { background: transparent; color: #c9c9c4; cursor: not-allowed; }
+  button.x.row { width: 20px; height: 20px; font-size: 15px; line-height: 20px; }
+  .rt td.rm { width: 28px; text-align: right; padding-right: 0; }
+  .rt td.sz { color: var(--muted); white-space: nowrap; }
+  .rt td.path { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 强制覆盖开关 */
+  .chk {
+    display: flex; align-items: flex-start; gap: 8px;
+    margin: 14px 0 0; font-size: 13px; color: var(--muted); cursor: pointer;
+    line-height: 1.5;
+  }
+  .chk input { margin: 2px 0 0; flex: none; }
+  .chk b { color: var(--text); font-weight: 500; }
 </style>
 </head>
 <body>
@@ -86,20 +143,53 @@
 
   <div class="card">
     <h2>1. 灌入知识库</h2>
-    <div class="row">
-      <div>
-        <label for="docId">documentId（同 id 重复灌入会覆盖）</label>
-        <input type="text" id="docId" value="doc-demo-001">
+
+    <!-- 文件上传 / 拖拽 -->
+    <div class="dropzone" id="dropZone">
+      <div class="dz-main">把 .txt / .md 文件或整个文件夹拖到这里</div>
+      <div class="dz-sub">或</div>
+      <div class="dz-btns">
+        <button type="button" class="ghost" id="btnPickFiles">选择文件</button>
+        <button type="button" class="ghost" id="btnPickDir">选择文件夹</button>
       </div>
-      <div>
-        <label for="title">title</label>
-        <input type="text" id="title" value="国家奖学金评审办法（测试）">
+      <div class="dz-hint">
+        docKey 用文件的相对路径（如 <code>南京市教育局/奖学金.txt</code>），同一路径重复上传会覆盖。<br>
+        上传是逐个文件依次请求，文件多时请耐心等待。
       </div>
     </div>
-    <label for="text">text（正文全文，太短只会切出 1 段；建议几百字以上）</label>
-    <textarea id="text" rows="7">国家奖学金的奖励标准为每生每年8000元。评审时间为每年9月，由各学院组织学生申请。申请条件：在校期间学习成绩优异，社会实践、创新能力、综合素质等方面特别突出。同一学年内，获得国家奖学金的家庭经济困难学生可以同时申请并获得国家助学金，但不能同时获得国家励志奖学金。</textarea>
-    <button id="btnIngest" onclick="doIngest()">灌入知识库</button><span class="timer" id="tIngest"></span>
-    <div class="msg" id="mIngest"></div>
+    <input type="file" id="fileInput" multiple accept=".txt,.md" style="display:none">
+    <input type="file" id="dirInput" webkitdirectory multiple style="display:none">
+
+    <label class="chk" for="forceOverwrite">
+      <input type="checkbox" id="forceOverwrite">
+      <span><b>强制覆盖</b>　内容没变也重新入库。默认会跳过已入库的内容（按内容哈希判断），省 embedding 时间。</span>
+    </label>
+
+    <!-- 待上传队列：先排队，确认无误再上传 -->
+    <div id="queueWrap" style="display:none">
+      <div class="rt-head">
+        <span>待上传 <b id="queueCount">0</b> 个文件（同路径会自动去重）</span>
+        <button type="button" class="x" id="btnClearQueue" title="清空待上传列表">×</button>
+      </div>
+      <table class="rt">
+        <thead><tr><th>文件</th><th>大小</th><th></th></tr></thead>
+        <tbody id="queueBody"></tbody>
+      </table>
+      <button id="btnUpload">开始上传</button>
+    </div>
+
+    <div class="prog" id="prog"></div>
+    <div class="msg" id="mUpload"></div>
+    <div id="resultWrap" style="display:none">
+      <div class="rt-head">
+        <span>本次上传结果</span>
+        <button type="button" class="x" id="btnClearResult" title="清空列表">×</button>
+      </div>
+      <table class="rt">
+        <thead><tr><th>文件</th><th>结果</th><th>块数</th><th>耗时</th><th></th></tr></thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="card">
@@ -123,7 +213,10 @@
 </div>
 
 <script>
-const TIMEOUT_MS = 300000;
+const TIMEOUT_MS = 300000;   // 单个文件最多等 5 分钟（首次要加载模型）
+const MAX_FILES = 500;       // 一次最多上传多少个文件
+
+/* ---------------- 通用 ---------------- */
 
 async function postJson(path, body) {
   const ctrl = new AbortController();
@@ -165,23 +258,290 @@ function show(el, cls, text) {
   el.textContent = text;
 }
 
-async function doIngest() {
-  const btn = document.getElementById('btnIngest');
-  const timerEl = document.getElementById('tIngest');
-  const msg = document.getElementById('mIngest');
-  const stop = startWait(btn, timerEl, '灌入中…');
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+}
+
+/* ---------------- 文件读取 ---------------- */
+
+/** 读文件文本：优先 UTF-8，失败回退 GBK（政府站点下载的 txt 常是 GBK） */
+async function readText(file) {
+  const buf = await file.arrayBuffer();
   try {
-    const data = await postJson('/api/ingest', {
-      documentId: document.getElementById('docId').value.trim(),
-      title: document.getElementById('title').value.trim(),
-      text: document.getElementById('text').value
-    });
-    show(msg, 'ok', '入库成功，切出 ' + data.chunks + ' 条知识块。耗时 ' + stop() + ' 秒');
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
   } catch (e) {
-    stop();
-    show(msg, 'err', '灌入失败：' + (e.name === 'AbortError' ? '超过 ' + (TIMEOUT_MS / 1000) + ' 秒未响应' : e.message));
+    try {
+      return new TextDecoder('gbk').decode(buf);
+    } catch (e2) {
+      return new TextDecoder('utf-8').decode(buf);   // 兜底，可能有乱码但不至于中断
+    }
   }
 }
+
+/** docKey：优先相对路径，其次文件名 */
+function keyOf(file) {
+  return file._relPath || file.webkitRelativePath || file.name;
+}
+
+/** 递归展开拖进来的目录（支撑整目录拖拽） */
+function walkEntry(entry, prefix, out) {
+  return new Promise(resolve => {
+    if (entry.isFile) {
+      entry.file(f => {
+        f._relPath = prefix + f.name;
+        out.push(f);
+        resolve();
+      }, () => resolve());
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readBatch = () => reader.readEntries(async batch => {
+        if (!batch.length) return resolve();
+        for (const e of batch) await walkEntry(e, prefix + entry.name + '/', out);
+        readBatch();
+      }, () => resolve());
+      readBatch();
+    } else {
+      resolve();
+    }
+  });
+}
+
+async function filesFromDrop(dt) {
+  const items = dt.items ? Array.from(dt.items) : [];
+  const entries = items
+    .map(i => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (!entries.length) return Array.from(dt.files || []);
+
+  const out = [];
+  for (const entry of entries) await walkEntry(entry, '', out);
+  return out;
+}
+
+/* ---------------- 批量上传 ---------------- */
+
+let busy = false;
+
+function setBusy(on) {
+  busy = on;
+  document.getElementById('btnPickFiles').disabled = on;
+  document.getElementById('btnPickDir').disabled = on;
+  document.getElementById('btnUpload').disabled = on || !pending.length;
+}
+
+function addRow(path, state, chunks, sec, err) {
+  const tr = document.createElement('tr');
+  tr.className = state;                       // ok / skip / bad
+  const st = state === 'ok' ? '成功'
+           : state === 'skip' ? '跳过（内容未变）'
+           : '失败：' + esc(err || '');
+  tr.innerHTML =
+    '<td class="path" title="' + esc(path) + '">' + esc(path) + '</td>' +
+    '<td class="st">' + st + '</td>' +
+    '<td>' + (chunks == null ? '-' : chunks) + '</td>' +
+    '<td>' + sec + 's</td>' +
+    '<td class="rm"></td>';
+
+  // 行内小叉叉：只从列表移除这一条，不动已入库的数据
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'x row';
+  del.title = '从列表移除（已入库的数据不会删除）';
+  del.textContent = '×';
+  del.onclick = () => {
+    if (busy) { return; }
+    tr.remove();
+    if (!document.getElementById('resultBody').children.length) {
+      document.getElementById('resultWrap').style.display = 'none';
+    }
+  };
+  tr.lastElementChild.appendChild(del);
+
+  document.getElementById('resultBody').prepend(tr);
+}
+
+/* ---------------- 待上传队列 ---------------- */
+
+let pending = [];            // 待上传的 File 列表
+
+/** 选文件/拖拽后先进队列，不立即上传 */
+function addToQueue(fileList) {
+  const msg = document.getElementById('mUpload');
+  const incoming = Array.from(fileList).filter(f => /\.(txt|md)$/i.test(f.name));
+
+  if (!incoming.length) {
+    show(msg, 'err', '没有找到 .txt / .md 文件');
+    return;
+  }
+
+  let added = 0, dup = 0;
+  for (const f of incoming) {
+    const key = keyOf(f);
+    if (pending.some(p => keyOf(p) === key)) { dup++; continue; }   // 路径重复的直接丢掉
+    pending.push(f);
+    added++;
+  }
+  pending.sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
+
+  if (pending.length > MAX_FILES) {
+    pending = pending.slice(0, MAX_FILES);
+    show(msg, 'info', '队列最多 ' + MAX_FILES + ' 个文件，超出的已忽略');
+  } else if (dup > 0) {
+    show(msg, 'info', '加入 ' + added + ' 个；有 ' + dup + ' 个路径重复，已自动忽略');
+  } else {
+    show(msg, 'ok', '已加入 ' + added + ' 个文件，确认后可点「开始上传」');
+  }
+
+  renderQueue();
+}
+
+/** 渲染待上传列表 */
+function renderQueue() {
+  const wrap = document.getElementById('queueWrap');
+  const body = document.getElementById('queueBody');
+  body.innerHTML = '';
+
+  pending.forEach((f, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="path" title="' + esc(keyOf(f)) + '">' + esc(keyOf(f)) + '</td>' +
+      '<td class="sz">' + (f.size / 1024).toFixed(1) + ' KB</td>' +
+      '<td class="rm"></td>';
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'x row';
+    del.title = '从待上传列表移除';
+    del.textContent = '×';
+    del.onclick = () => {
+      if (busy) { return; }
+      pending.splice(idx, 1);
+      renderQueue();
+    };
+    tr.lastElementChild.appendChild(del);
+    body.appendChild(tr);
+  });
+
+  document.getElementById('queueCount').textContent = pending.length;
+  wrap.style.display = pending.length ? 'block' : 'none';
+  document.getElementById('btnUpload').disabled = busy || !pending.length;
+}
+
+/** 真正开始上传 */
+async function uploadQueue() {
+  if (busy || !pending.length) { return; }
+
+  setBusy(true);
+  const msg = document.getElementById('mUpload');
+  const prog = document.getElementById('prog');
+  document.getElementById('resultWrap').style.display = 'block';
+  document.getElementById('resultBody').innerHTML = '';
+  prog.style.display = 'block';
+
+  const force = document.getElementById('forceOverwrite').checked;
+  const total = pending.length;
+  const t0 = Date.now();
+  let okCount = 0, skipCount = 0, failCount = 0, chunkTotal = 0;
+  const retry = [];          // 失败的留在队列里，方便直接重试
+
+  for (let i = 0; i < total; i++) {
+    const f = pending[i];
+    const key = keyOf(f);
+    prog.innerHTML = '处理中 <b>' + (i + 1) + ' / ' + total + '</b>：' + esc(key);
+    const t1 = Date.now();
+    try {
+      const text = await readText(f);
+      if (!text.trim()) throw new Error('文件为空');
+      const data = await postJson('/api/ingest', {
+        docKey: key,
+        text: text,
+        force: force ? 'true' : 'false'
+      });
+      const sec = ((Date.now() - t1) / 1000).toFixed(1);
+      if (data.skipped) {
+        skipCount++;
+        addRow(key, 'skip', 0, sec);
+      } else {
+        okCount++;
+        chunkTotal += (data.chunks || 0);
+        addRow(key, 'ok', data.chunks, sec);
+      }
+    } catch (e) {
+      failCount++;
+      retry.push(f);
+      const reason = (e.name === 'AbortError') ? '超时 ' + (TIMEOUT_MS / 1000) + ' 秒' : e.message;
+      addRow(key, 'bad', null, ((Date.now() - t1) / 1000).toFixed(1), reason);
+    }
+  }
+
+  pending = retry;
+  renderQueue();
+
+  const totalSec = ((Date.now() - t0) / 1000).toFixed(1);
+  prog.innerHTML = '完成：共 <b>' + total + '</b> 个文件，新增 <b>' + okCount +
+                   '</b>，跳过 <b>' + skipCount + '</b>，失败 <b>' + failCount +
+                   '</b>，共 <b>' + chunkTotal + '</b> 条知识块，总耗时 <b>' + totalSec + '</b> 秒';
+
+  if (failCount > 0 && okCount === 0 && skipCount === 0) {
+    show(msg, 'err', '全部失败，原因见上表。失败的仍留在待上传列表，修好后可直接再点「开始上传」。');
+  } else if (failCount > 0) {
+    show(msg, 'info', '部分失败。失败的仍留在待上传列表，可直接重试。');
+  } else if (skipCount === total) {
+    show(msg, 'ok', '全部跳过：这些内容之前已经入库过。想强制重灌，勾上「强制覆盖」。');
+  } else {
+    show(msg, 'ok', '完成。现在可以去下面提问了。');
+  }
+
+  setBusy(false);
+}
+
+/* 绑定上传入口 */
+document.getElementById('btnPickFiles').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('btnPickDir').onclick = () => document.getElementById('dirInput').click();
+
+/* 清空本次结果 */
+document.getElementById('btnClearResult').onclick = () => {
+  if (busy) { return; }
+  document.getElementById('resultBody').innerHTML = '';
+  document.getElementById('resultWrap').style.display = 'none';
+  const prog = document.getElementById('prog');
+  prog.innerHTML = '';
+  prog.style.display = 'none';
+  document.getElementById('mUpload').className = 'msg';
+};
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  addToQueue(e.target.files);
+  e.target.value = '';      // 清空，方便下次选同样的文件
+});
+document.getElementById('dirInput').addEventListener('change', e => {
+  addToQueue(e.target.files);
+  e.target.value = '';
+});
+
+/* 队列操作 */
+document.getElementById('btnUpload').onclick = () => uploadQueue();
+document.getElementById('btnClearQueue').onclick = () => {
+  if (busy) { return; }
+  pending = [];
+  renderQueue();
+  document.getElementById('mUpload').className = 'msg';
+};
+
+/* 拖拽 */
+const dz = document.getElementById('dropZone');
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.add('over');
+}));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.remove('over');
+}));
+dz.addEventListener('drop', async e => {
+  const files = await filesFromDrop(e.dataTransfer);
+  addToQueue(files);
+});
+
+/* ---------------- 提问 ---------------- */
 
 async function doAsk() {
   const btn = document.getElementById('btnAsk');
@@ -237,10 +597,6 @@ function addLog(q, hit, degraded, sec) {
     + '<td>' + (degraded ? '是' : '否') + '</td>'
     + '<td>' + sec + 's</td>';
   document.getElementById('logBody').prepend(tr);
-}
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
 }
 
 document.getElementById('question').addEventListener('keydown', e => {
